@@ -4,7 +4,6 @@ const SHA256 = require("crypto-js/sha256");
 const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
 const User = require("../models/User");
-const isAuthenticated = require("../middlewares/isAuthenticated");
 const fileUpload = require("express-fileupload");
 const cloudinary = require("cloudinary").v2;
 
@@ -35,11 +34,17 @@ router.post("/signup", fileUpload(), async (req, res) => {
         .status(400)
         .json({ message: "Please choose if you want the newsletter or not" });
     }
-    const user = await User.findOne({ email: req.body.email });
-    if (user) {
+    const testUserMail = await User.findOne({ email: email });
+    if (testUserMail) {
       return res
         .status(409)
         .json({ message: "An account with this email already exist" });
+    }
+    const testUserName = await User.findOne({ username: username });
+    if (testUserName) {
+      return res
+        .status(409)
+        .json({ message: "An account with this username already exist" });
     }
 
     const salt = uid2(16);
@@ -56,12 +61,14 @@ router.post("/signup", fileUpload(), async (req, res) => {
       hash: hash,
       salt: salt,
     });
-    if (req.files.avatar !== null) {
-      const pictureConverted = await cloudinary.uploader.upload(
-        convertToBase64(req.files.avatar),
-        { folder: `/vinted/user/${newUser._id}` }
-      );
-      newUser.account.avatar = pictureConverted;
+    if (req.files) {
+      if (req.files.avatar !== null) {
+        const pictureConverted = await cloudinary.uploader.upload(
+          convertToBase64(req.files.avatar),
+          { folder: `/vinted/user/${newUser._id}` }
+        );
+        newUser.account.avatar = pictureConverted;
+      }
     }
 
     await newUser.save();
@@ -98,7 +105,7 @@ router.post("/login", async (req, res) => {
         res.json({
           _id: user._id,
           token: user.token,
-          account: { username: user.account.username },
+          account: user.account,
         });
       } else {
         res.status(400).json({ message: "Wrong password" });

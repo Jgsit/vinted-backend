@@ -30,7 +30,7 @@ const offerRoutes = require("./routes/offer");
 
 // utilisation de mes routers
 app.use("/user", userRoutes);
-app.use("/offer?s", offerRoutes);
+app.use("/offer", offerRoutes);
 
 app.all("*", (req, res) => {
   res.status(404).json({ message: "This route does not exist" });

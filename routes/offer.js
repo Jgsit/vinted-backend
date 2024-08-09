@@ -7,6 +7,7 @@ const cloudinary = require("cloudinary").v2;
 
 // import nos models
 const Offer = require("../models/Offer");
+const User = require("../models/User");
 
 // immport de nos middlewares
 const isAuthenticated = require("../middlewares/isAuthenticated");
@@ -20,7 +21,6 @@ const convertToBase64 = (file) => {
 // route pour creer une offre
 router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
   try {
-    let picture = null;
     const { title, description, price, condition, city, brand, size, color } =
       req.body;
     if (!title) {
@@ -33,9 +33,9 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
       return res.status(400).json({ message: "Le lieux est obligatoire" });
     }
     if (description.length > 500) {
-      return res
-        .status(416)
-        .json({ message: "La description doit faire moins de 500 caractères" });
+      return res.status(416).json({
+        message: "La description doit faire moins de 500 caractères",
+      });
     }
     if (title.length > 50) {
       return res
@@ -46,9 +46,6 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
       return res
         .status(416)
         .json({ message: "Le prix ne peut pas dépasser 100 000€" });
-    }
-    if (req.files && req.files.picture) {
-      picture = req.files.picture;
     }
     const newOffer = new Offer({
       product_name: title,
@@ -65,16 +62,28 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
       ],
       owner: req.user,
     });
-    if (picture !== null) {
-      const pictureConverted = await cloudinary.uploader.upload(
-        convertToBase64(req.files.picture),
-        { folder: `/vinted/offers/${newOffer._id}` }
-      );
-      newOffer.product_image = pictureConverted;
+    if (req.files) {
+      if (req.files.picture) {
+        const pictureConverted = await cloudinary.uploader.upload(
+          convertToBase64(req.files.picture),
+          { folder: `/vinted/offers/${newOffer._id}` }
+        );
+        newOffer.product_image = pictureConverted;
+      }
+      if (req.files.pictures) {
+        const picturesConverted = [];
+        for (let i = 0; i < req.files.pictures.length; i++) {
+          const picture = await cloudinary.uploader.upload(
+            convertToBase64(req.files.pictures[i]),
+            { folder: `/vinted/offers/${newOffer._id}` }
+          );
+          picturesConverted.push(picture);
+        }
+        newOffer.product_pictures = picturesConverted;
+      }
     }
-
     await newOffer.save();
-    const result = {
+    const responseObj = {
       _id: newOffer._id,
       product_name: newOffer.product_name,
       product_description: newOffer.product_description,
@@ -94,8 +103,9 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
         _id: req.user._id,
       },
       product_image: newOffer.product_image,
+      product_pictures: newOffer.product_pictures,
     };
-    res.status(201).json(result);
+    res.status(201).json(responseObj);
   } catch (error) {
     res.status(500).json(error.message);
   }
@@ -109,11 +119,34 @@ router.put("/modify/:id", isAuthenticated, fileUpload(), async (req, res) => {
       // on test si offerToModify renvoie null
       return res.status(400).json({ message: "L'offre n'existe pas" });
     }
-    const { description, price, condition, color, city, picture } = req.body;
+    if (offerToModify.owner._id !== req.user._id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const { title, description, price, condition, color, city } = req.body;
+    const { picture, pictures } = req.files;
+
+    if (title) {
+      if (title.length > 50) {
+        return res
+          .status(416)
+          .json({ message: "Le titre doit faire moins de 50 caractères" });
+      }
+      offerToModify.product_name = title;
+    }
     if (description) {
+      if (description.length > 500) {
+        return res.status(416).json({
+          message: "La description doit faire moins de 500 caractères",
+        });
+      }
       offerToModify.product_description = description;
     }
     if (price) {
+      if (price > 100_000) {
+        return res
+          .status(416)
+          .json({ message: "Le prix ne peut pas dépasser 100 000€" });
+      }
       offerToModify.product_price = price;
     }
     if (condition) {
@@ -125,22 +158,23 @@ router.put("/modify/:id", isAuthenticated, fileUpload(), async (req, res) => {
     if (city) {
       offerToModify.product_details[4].EMPLACEMENT = city;
     }
-    if (description.length > 500) {
-      return res
-        .status(416)
-        .json({ message: "La description doit faire moins de 500 caractères" });
-    }
-    if (price > 100_000) {
-      return res
-        .status(416)
-        .json({ message: "Le prix ne peut pas dépasser 100 000€" });
-    }
-    if (picture !== null) {
+    if (picture) {
       const pictureConverted = await cloudinary.uploader.upload(
         convertToBase64(req.files.picture),
         { folder: `/vinted/offers/${offerToModify._id}` }
       );
       offerToModify.product_image = pictureConverted;
+    }
+    if (pictures) {
+      const picturesConverted = [];
+      for (let i = 0; i < pictures.length; i++) {
+        const pictureConverted = await cloudinary.uploader.upload(
+          convertToBase64(req.files.pictures[i]),
+          { folder: `vinted/offers/${offerToModify._id}` }
+        );
+        picturesConverted.push(pictureConverted);
+      }
+      offerToModify.product_pictures = picturesConverted;
     }
     offerToModify.markModified("product_details");
     await offerToModify.save(); // on sauvegarde les modifications
@@ -232,6 +266,7 @@ router.get("", async (req, res) => {
         product_description: offers[i].product_description,
         product_price: offers[i].product_price,
         owner: offers[i].owner,
+        product_pictures: offers[i].product_pictures,
         __v: offers[i].__v,
       };
     }
