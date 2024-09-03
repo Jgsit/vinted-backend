@@ -23,8 +23,6 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
   try {
     const { title, description, price, condition, city, brand, size, color } =
       req.body;
-    console.log(req.files);
-
     if (!title) {
       return res.status(400).json({ message: "Le titre est obligatoire" });
     }
@@ -74,14 +72,18 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
       }
       if (req.files.pictures) {
         const picturesConverted = [];
-        for (let i = 0; i < req.files.pictures.length; i++) {
-          const picture = await cloudinary.uploader.upload(
-            convertToBase64(req.files.pictures[i]),
-            { folder: `/vinted/offers/${newOffer._id}` }
-          );
-          picturesConverted.push(picture);
+        if (req.files.pictures.length === undefined) {
+          newOffer.product_pictures = newOffer.product_image;
+        } else {
+          for (let i = 0; i < req.files.pictures.length; i++) {
+            const picture = await cloudinary.uploader.upload(
+              convertToBase64(req.files.pictures[i]),
+              { folder: `/vinted/offers/${newOffer._id}` }
+            );
+            picturesConverted.push(picture);
+          }
+          newOffer.product_pictures = picturesConverted;
         }
-        newOffer.product_pictures = picturesConverted;
       }
     }
     await newOffer.save();
@@ -107,6 +109,7 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
       product_image: newOffer.product_image,
       product_pictures: newOffer.product_pictures,
     };
+
     res.status(201).json(responseObj);
   } catch (error) {
     res.status(500).json(error.message);
@@ -115,7 +118,7 @@ router.post("/publish", isAuthenticated, fileUpload(), async (req, res) => {
 
 // route pour modifier une offre
 router.put(
-  "offers/modify/:id",
+  "/offers/modify/:id",
   isAuthenticated,
   fileUpload(),
   async (req, res) => {
@@ -128,7 +131,8 @@ router.put(
       if (offerToModify.owner._id !== req.user._id) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const { title, description, price, condition, color, city } = req.body;
+      const { title, description, price, condition, color, city, status } =
+        req.body;
       const { picture, pictures } = req.files;
 
       if (title) {
@@ -182,6 +186,11 @@ router.put(
         }
         offerToModify.product_pictures = picturesConverted;
       }
+
+      if (status) {
+        offerToModify.product_status = status;
+      }
+
       offerToModify.markModified("product_details");
       await offerToModify.save(); // on sauvegarde les modifications
       const result = {
@@ -196,6 +205,7 @@ router.put(
           COULEUR: offerToModify.product_details[3].COULEUR,
           EMPLACEMENT: offerToModify.product_details[4].EMPLACEMENT,
         },
+        product_status: offerToModify.product_status,
         owner: {
           account: {
             username: req.user.account.username,
@@ -259,8 +269,6 @@ router.get("/offers", async (req, res) => {
     if (sort) {
       query = query.sort({ product_price: sort.split("-")[1] });
     }
-    console.log(query);
-
     const offers = await query;
     let arrayOffers = [];
     count - (page - 1) * limit > limit
@@ -274,6 +282,7 @@ router.get("/offers", async (req, res) => {
         product_name: offers[i].product_name,
         product_description: offers[i].product_description,
         product_price: offers[i].product_price,
+        product_status: offers[i].product_status,
         owner: offers[i].owner,
         product_pictures: offers[i].product_pictures,
         __v: offers[i].__v,
@@ -296,11 +305,12 @@ router.get("/offers/:id", async (req, res) => {
     if (offer) {
       let result = {
         product_details: offer.product_details,
-        product_pictures: [],
+        product_pictures: offer.product_pictures,
         _id: offer._id,
         product_name: offer.product_name,
         product_description: offer.product_description,
         product_price: offer.product_price,
+        product_status: offer.product_status,
         owner: offer.owner,
         product_image: offer.product_image,
         __v: offer.__v,
