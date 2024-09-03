@@ -6,6 +6,8 @@ app.use(express.json());
 // configuration de dotenv
 require("dotenv").config();
 
+const stripe = require("stripe")(process.env.STRIPE_SECRETKEY);
+
 // import cors
 const cors = require("cors");
 app.use(cors());
@@ -29,8 +31,27 @@ const userRoutes = require("./routes/user");
 const offerRoutes = require("./routes/offer");
 
 // utilisation de mes routers
-app.use("/user", userRoutes);
-app.use("/offer", offerRoutes);
+app.use(userRoutes);
+app.use(offerRoutes);
+
+app.post("/payment", async (req, res) => {
+  try {
+    const { title, amount } = req.body;
+    // On crée une intention de paiement
+    const paymentIntent = await stripe.paymentIntents.create({
+      // Montant de la transaction
+      amount: Number(amount * 100),
+      // Devise de la transaction
+      currency: "eur",
+      // Description du produit
+      description: title,
+    });
+    // On renvoie les informations de l'intention de paiement au client
+    res.json(paymentIntent);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
 app.all("*", (req, res) => {
   res.status(404).json({ message: "This route does not exist" });
